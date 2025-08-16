@@ -13,44 +13,49 @@ namespace Carrera.App.ViewModels
     public class MainViewModel : INotifyPropertyChanged
     {
         public event PropertyChangedEventHandler? PropertyChanged;
-        private void OnPropertyChanged([CallerMemberName] string? name = null) =>
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        private void OnPropertyChanged([CallerMemberName] string? name = null) 
+            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
+        // BLE / Log
         public ObservableCollection<string> Log { get; } = new();
         public ObservableCollection<BleCharacteristicInfo> Characteristics => _ble.Characteristics;
         public ObservableCollection<BleDeviceInfo> Devices => _ble.Devices;
 
         private readonly BleService _ble = new();
         private BleDeviceInfo? _selectedDevice;
-        public BleDeviceInfo? SelectedDevice
-        {
-            get => _selectedDevice;
-            set { _selectedDevice = value; OnPropertyChanged(); }
+        public BleDeviceInfo? SelectedDevice 
+        { 
+            get => _selectedDevice; 
+            set { _selectedDevice = value; OnPropertyChanged(); } 
         }
 
         private string _statusText = "Bereit";
-        public string StatusText
-        {
-            get => _statusText;
-            set { _statusText = value; OnPropertyChanged(); }
+        public string StatusText 
+        { 
+            get => _statusText; 
+            set { _statusText = value; OnPropertyChanged(); } 
         }
 
+        // Countdown / Rennstatus
         private int _countdown = 0;
         public string CountdownDisplay => _countdown > 0 ? new string('●', _countdown) : "–";
-
         private bool _safetyCar;
-        public bool SafetyCar
+        public bool SafetyCar { get => _safetyCar; set { _safetyCar = value; OnPropertyChanged(); } }
+        private bool _ghostCar;
+        public bool GhostCar { get => _ghostCar; set { _ghostCar = value; OnPropertyChanged(); } }
+
+        // Fahrerprofile
+        public ObservableCollection<DriverProfile> AllDrivers { get; } = new();
+        public ObservableCollection<DriverProfile> ActiveDrivers { get; } = new();
+        private DriverProfile? _selectedDriver;
+        public DriverProfile? SelectedDriver
         {
-            get => _safetyCar;
-            set { _safetyCar = value; OnPropertyChanged(); }
+            get => _selectedDriver;
+            set { _selectedDriver = value; OnPropertyChanged(); }
         }
 
-        private bool _ghostCar;
-        public bool GhostCar
-        {
-            get => _ghostCar;
-            set { _ghostCar = value; OnPropertyChanged(); }
-        }
+        // Telemetrie
+        private readonly TelemetryParser _parser = new();
 
         // Commands
         public RelayCommand ScanCommand { get; }
@@ -58,17 +63,43 @@ namespace Carrera.App.ViewModels
         public RelayCommand StartCountdownCommand { get; }
         public RelayCommand RaceStartCommand { get; }
         public RelayCommand RaceStopCommand { get; }
-        public RelayCommand ShowTelemetryCommand { get; }
+
+        public RelayCommand AddActiveDriverCommand { get; }
+        public RelayCommand RemoveActiveDriverCommand { get; }
 
         public MainViewModel()
         {
             _ble.OnLog += s => Application.Current.Dispatcher.Invoke(() => Log.Add(s));
+            _ble.Parser = _parser;
+
+            _parser.OnTelemetry += td =>
+            {
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    Log.Add($"Car {td.CarId}: Fuel={td.Fuel}, Laps={td.Laps}, Pos={td.Position}");
+                });
+            };
+
+            // Beispiel-Fahrer (später aus Datei erweiterbar)
+            AllDrivers.Add(new DriverProfile { Name = "Max", Team = "Red", Car = "Audi R8" });
+            AllDrivers.Add(new DriverProfile { Name = "Luca", Team = "Blue", Car = "Porsche 911" });
+
+            // Commands
             ScanCommand = new RelayCommand(async () => await ScanAsync());
             ConnectCommand = new RelayCommand(async () => await ConnectAsync());
             StartCountdownCommand = new RelayCommand(async () => await CountdownAsync());
             RaceStartCommand = new RelayCommand(async () => await RaceStartAsync());
             RaceStopCommand = new RelayCommand(async () => await RaceStopAsync());
-            ShowTelemetryCommand = new RelayCommand(() => ShowTelemetry());
+            AddActiveDriverCommand = new RelayCommand(() =>
+            {
+                if (SelectedDriver != null && !ActiveDrivers.Contains(SelectedDriver))
+                    ActiveDrivers.Add(SelectedDriver);
+            });
+            RemoveActiveDriverCommand = new RelayCommand(() =>
+            {
+                if (SelectedDriver != null && ActiveDrivers.Contains(SelectedDriver))
+                    ActiveDrivers.Remove(SelectedDriver);
+            });
         }
 
         private async Task ScanAsync()
@@ -99,19 +130,14 @@ namespace Carrera.App.ViewModels
 
         private async Task RaceStartAsync()
         {
-            Log.Add("[CMD] Rennen START – (Befehl an CU folgt, sobald UUIDs feststehen)");
+            Log.Add("[CMD] Rennen START – (Write auf CU-Char folgt, sobald UUIDs feststehen)");
             await Task.CompletedTask;
         }
 
         private async Task RaceStopAsync()
         {
-            Log.Add("[CMD] Rennen STOP – (Befehl an CU folgt, sobald UUIDs feststehen)");
+            Log.Add("[CMD] Rennen STOP – (Write auf CU-Char folgt, sobald UUIDs feststehen)");
             await Task.CompletedTask;
-        }
-
-        private void ShowTelemetry()
-        {
-            Log.Add("[UI] Telemetry-Ansicht öffnen – (hier später Erweiterung für Beamer/2. Monitor)");
         }
     }
 }
